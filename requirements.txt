@@ -1,0 +1,6 @@
+gradio
+opencv-python
+requests
+torch
+numpy
+ultralytics
