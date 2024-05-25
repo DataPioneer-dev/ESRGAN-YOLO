@@ -1,38 +1,22 @@
 import gradio as gr
 import cv2
-import requests
-import os
-import sys
 import torch
-import io
 from collections import OrderedDict
 import numpy as np
 from ultralytics import YOLO
 import RRDBNet_arch as arch
 
-# Google Drive file IDs
-url_ESRGAN = 'https://drive.google.com/uc?id=1TPrz5QKd8DHHt1k8SRtm6tMiPjz_Qene'
-url_PSNR = 'https://drive.google.com/uc?id=1pJ_T-V1dpb1ewoEra1TGSWl5e6H7M4NN'
+net_PSNR_path = './models/RRDB_PSNR_x4.pth'
+net_ESRGAN_path = './models/RRDB_ESRGAN_x4.pth'
 
-# Function to download files from Google Drive
-def download_file_from_google_drive(url):
-    response = requests.get(url, stream=True)
-    response.raise_for_status()
-    return response.content
-
-# Download the model files from Google Drive
-net_PSNR_bytes = download_file_from_google_drive(url_PSNR)
-net_ESRGAN_bytes = download_file_from_google_drive(url_ESRGAN)
-
-# Load the models from bytes
-net_PSNR = torch.load(io.BytesIO(net_PSNR_bytes), map_location=torch.device('cpu'))
-net_ESRGAN = torch.load(io.BytesIO(net_ESRGAN_bytes), map_location=torch.device('cpu'))
+net_PSNR = torch.load(net_PSNR_path)
+net_ESRGAN = torch.load(net_ESRGAN_path)
 
 # Set device to CUDA if available, otherwise CPU
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Load the YOLOv8 model
-model_yolo = YOLO("yolov8n-face.pt")  # Replace with your model path
+model_yolo = YOLO("./models/yolov8n-face.pt")  # Replace with your model path
 
 def detecte_enhance_faces(image, alpha):
     net_interp = OrderedDict()
@@ -66,7 +50,7 @@ def detecte_enhance_faces(image, alpha):
 
             # Extract the RoI (Region of Interest) from the image
             img = image[y1:y2, x1:x2]
-
+            img = img * 1.0 / 255
             img = torch.from_numpy(np.transpose(img[:, :, [2, 1, 0]], (2, 0, 1))).float()
             img_LR = img.unsqueeze(0)
             img_LR = img_LR.to(device)
@@ -74,7 +58,7 @@ def detecte_enhance_faces(image, alpha):
             with torch.no_grad():
                 output = model_esrgan(img_LR).data.squeeze().float().cpu().clamp_(0, 1).numpy()
             output = np.transpose(output[[2, 1, 0], :, :], (1, 2, 0))
-            output = (output * 255.0).round()
+            output = (output * 255.0).round().astype(np.uint8)
 
             # Convert the RoI back to RGB format
             roi = cv2.cvtColor(output, cv2.COLOR_BGR2RGB)
@@ -92,8 +76,9 @@ iface = gr.Interface(
         gr.Slider(minimum=0, maximum=1, step=0.01, value=0.5, label="Alpha")
     ],
     outputs=gr.Gallery(label="Detected Faces"),
-    title="YOLOv8 Face Detection",
-    description="Upload an image and the app will detect and return the faces in it using YOLOv8."
+    title="Enhanced face detection (ESRGAN & YOLOv8)",
+    description="To use the app, simply upload your image (jpeg, jpg or png). Please click submit only once",
+    flagging_options=None 
 )
 
 # Launch the Gradio app
